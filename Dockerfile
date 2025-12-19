@@ -17,4 +17,6 @@ RUN pip install --no-cache-dir --upgrade -r requirements.txt
 COPY --chown=user . /app
 
 # Start Ollama in the background, pull the model, then start the Gradio app
+RUN nohup ollama serve > output1.log 2>&1 &
+RUN ollama pull amsaravi/medgemma-4b-it:q8
 CMD python app.py --port 7860

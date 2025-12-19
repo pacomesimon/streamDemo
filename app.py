@@ -85,19 +85,36 @@ def chat_with_ollama(message, history, image, system_prompt = None):
       result += chunk['message']['content']
       yield result
 
+def restart_ollama_server():
+  log_file = "output1.log"
+  os.system(f"nohup ollama serve > {log_file} 2>&1 &")
+  while True:
+    if os.path.exists(log_file):
+        with open(log_file, "r") as f:
+            yield f.read()
+
+def reload_ollama_model():
+  log_file = "output2.log"
+  os.system(f"ollama pull amsaravi/medgemma-4b-it:q8 > {log_file} 2>&1 &")
+  while True:
+    if os.path.exists(log_file):
+        with open(log_file, "r") as f:
+            yield f.read()
 
 with gr.Blocks() as demo:
-  with gr.Row():
+  with gr.Tab("Ollama Server Control"):
     with gr.Column():
       ollama_server_btn = gr.Button("Restart Ollama Server")
+      server_logs = gr.Textbox(label="Ollama Server Logs", lines=10)
       ollama_server_btn.click(
-        fn=lambda : os.system("sudo ollama serve"), 
-        inputs = [], outputs = [])
+        fn=restart_ollama_server,
+        inputs = [], outputs = server_logs)
     with gr.Column():
       ollama_model_btn = gr.Button("Reload Ollama Model")
+      model_logs = gr.Textbox(label="Ollama Model Reload Logs", lines=10)
       ollama_model_btn.click(
-        fn=lambda : os.system("sudo ollama pull amsaravi/medgemma-4b-it:q8"),
-        inputs = [], outputs = [])
+        fn=reload_ollama_model,
+        inputs = [], outputs = model_logs)
 
   with gr.Tab("Chat with MedGemma"):
     gr.ChatInterface(
@@ -120,6 +137,77 @@ with gr.Blocks() as demo:
                   gr.TextArea(label="System Prompt")
                   ],
         outputs = gr.TextArea(label="Output Text")
+    )
+  with gr.Tab("JS Documentation"):
+    gr.Markdown(
+      """
+      ## First, install the needed package:
+      ```bash
+      npm i -D @gradio/client
+      ```
+      """
+    )
+    gr.Markdown(
+        """
+        **Vision prompting example:**
+          Remarks: 
+          - Make sure to replace the URL with your Gradio app URL.
+          - You can pass the imageBlob for visual analysis.
+          - The system prompt is optional.
+          - The response is streamed.
+
+          ```javascript
+          import { Client } from "@gradio/client";
+          import fs from "fs/promises";
+            const buffer = await fs.readFile("./chest_xray.png");
+            const URL = "https://9c1cc7f2462b816796.gradio.live"; // Replace with your Gradio app URL
+            const imageBlob = new Blob([buffer], { type: "image/png" });
+            const client = await Client.connect(URL);
+            let result = client.submit("/chat", {
+                message: "Who are you?",
+                    image: null, // You can pass the imageBlob for visual analysis.
+                system_prompt: "You are a clinical analysis system",
+            });
+            let current_message = ""
+            for await (const message of result) {
+            console.clear();
+            current_message = message["data"][0]
+            console.log(current_message);
+            }
+          ```
+        """
+
+    )
+    gr.Markdown(
+        """
+        **Audio prompting example**
+        Remarks:
+        - Make sure to replace the URL with your Gradio app URL.
+        - You can pass the audioBlob for transcription.
+        - Without the system prompt, the model will just transcribe the audio.
+        - With the system prompt, the model will provide a summary or analysis based on the transcription.
+
+        ```javascript
+        import { Client } from "@gradio/client";
+        import fs from "fs/promises";
+          const URL = "https://9c1cc7f2462b816796.gradio.live/"; // Replace with your Gradio app URL
+          const buffer = await fs.readFile("./hello_there.mp3");
+          const audioBlob = new Blob([buffer], { type: "audio/mp3" });
+          const client = await Client.connect(URL);
+          let result = client.submit("/predict", {
+                  audio_file: audioBlob,
+              system_prompt: "This is an audio transcription. what do you think it's all about?",
+          });
+
+          let current_message = ""
+          for await (const message of result) {
+          console.clear();
+          current_message = message["data"][0]
+          console.log(current_message);
+          }
+
+        ```
+        """
     )
 demo.launch(
     # debug=True,
