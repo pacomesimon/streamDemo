@@ -4,6 +4,7 @@ from ollama import chat
 from ollama import ChatResponse
 import requests
 from PIL import Image
+import base64
 
 import torch
 from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline
@@ -56,8 +57,6 @@ def get_audio_summary(audio_file = None, system_prompt = None):
 
 
 def chat_with_ollama(message, history, image, system_prompt = None):
-    # print(f"message: {message}")
-    # print(f"history: {history}")
     messages = []
     # # Add previous conversation history
     # for human, assistant in history:
@@ -150,7 +149,7 @@ with gr.Blocks() as demo:
     gr.Markdown(
         """
         **Vision prompting example:**
-          Remarks: 
+          ### Remarks: 
           - Make sure to replace the URL with your Gradio app URL.
           - You can pass the imageBlob for visual analysis.
           - The system prompt is optional.
@@ -159,57 +158,69 @@ with gr.Blocks() as demo:
           ```javascript
           import { Client } from "@gradio/client";
           import fs from "fs/promises";
-            const buffer = await fs.readFile("./chest_xray.png");
-            const URL = "https://9c1cc7f2462b816796.gradio.live"; // Replace with your Gradio app URL
-            const imageBlob = new Blob([buffer], { type: "image/png" });
-            const client = await Client.connect(URL);
-            let result = client.submit("/chat", {
-                message: "Who are you?",
-                    image: null, // You can pass the imageBlob for visual analysis.
-                system_prompt: "You are a clinical analysis system",
-            });
-            let current_message = ""
-            for await (const message of result) {
+          const buffer = await fs.readFile("../chest_xray.png");
+          const URL = "https://22c15a1574ad57ad36.gradio.live/"; // Replace with your Gradio app URL
+          const imageBlob = new Blob([buffer], { type: "image/png" });
+          const client = await Client.connect(URL);
+          const result = client.submit("/chat", {
+              message: "Who are you?",
+                  image: null, // You can pass the imageBlob for visual analysis.
+              system_prompt: "You are a clinical analysis system",
+          });
+          let previous_message = ""
+          let current_message = ""
+          for await (const message of result) {
+            previous_message = current_message
             console.clear();
             current_message = message["data"][0]
             console.log(current_message);
+            if(previous_message.length == current_message.length){
+              result.cancel();
+              break;
             }
+          }
+          console.log("DONE!")
           ```
         """
 
     )
     gr.Markdown(
         """
-        **Audio prompting example**
-        Remarks:
+        **Audio prompting example:**
+        ### Remarks:
         - Make sure to replace the URL with your Gradio app URL.
-        - You can pass the audioBlob for transcription.
+        - You have to pass the audioBlob for transcription.
         - Without the system prompt, the model will just transcribe the audio.
         - With the system prompt, the model will provide a summary or analysis based on the transcription.
 
         ```javascript
         import { Client } from "@gradio/client";
         import fs from "fs/promises";
-          const URL = "https://9c1cc7f2462b816796.gradio.live/"; // Replace with your Gradio app URL
-          const buffer = await fs.readFile("./hello_there.mp3");
-          const audioBlob = new Blob([buffer], { type: "audio/mp3" });
-          const client = await Client.connect(URL);
-          let result = client.submit("/predict", {
-                  audio_file: audioBlob,
-              system_prompt: "This is an audio transcription. what do you think it's all about?",
-          });
-
-          let current_message = ""
-          for await (const message of result) {
+        const URL = "https://0f07c8280493e7c621.gradio.live/"; // Replace with your Gradio app URL
+        const buffer = await fs.readFile("../hello_there.mp3");
+        const audioBlob = new Blob([buffer], { type: "audio/mp3" });
+        const client = await Client.connect(URL);
+        const result = client.submit("/predict", {
+                audio_file: audioBlob,
+            system_prompt: "This is an audio transcription. what do you think it's all about?",
+        });
+        let previous_message = ""
+        let current_message = ""
+        for await (const message of result) {
+          previous_message = current_message
           console.clear();
           current_message = message["data"][0]
           console.log(current_message);
+          if(previous_message.length == current_message.length){
+            result.cancel();
+            break;
           }
+        }
+        console.log("DONE!")
 
         ```
         """
     )
 demo.launch(
-    # debug=True,
     share=True,
 )
