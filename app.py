@@ -5,6 +5,8 @@ from ollama import ChatResponse
 import requests
 from PIL import Image
 import base64
+import json
+from io import BytesIO
 
 import torch
 from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline
@@ -55,6 +57,37 @@ def get_audio_summary(audio_file = None, system_prompt = None):
       result += chunk['message']['content']
       yield result
 
+def chat_with_ollama_JSON(messages):
+    messages = json.loads(messages)
+    result = ""
+    for chunk in chat(model='amsaravi/medgemma-4b-it:q8', messages=messages, stream = True):
+      result += chunk['message']['content']
+      yield result
+
+def get_b64(image):
+  buffered = BytesIO()
+  image.save(buffered, format="PNG") # Assuming PNG format is suitable for base64 encoding
+  img_b64 = base64.b64encode(buffered.getvalue()).decode()
+  return img_b64
+
+def assemble_json_prompt(system_prompt_txt, 
+      user_prompt_txt, img_b64_txt):
+  messages = []
+  if (system_prompt_txt is not None) and (len(str(system_prompt_txt).strip())!=0):
+    system_message_dict = {
+            "role": "system", 
+            "content": system_prompt_txt}
+    messages.append(system_message_dict)
+  if (user_prompt_txt is not None) and (len(str(user_prompt_txt).strip())!=0):
+    user_message_dict = {
+            "role": "user", 
+            "content": user_prompt_txt}
+    if (img_b64_txt is not None) and (len(str(img_b64_txt).strip())!=0):
+      user_message_dict["images"] = [img_b64_txt]
+    messages.append(user_message_dict)
+  return json.dumps(messages, sort_keys=True, indent=4)
+
+  
 
 def chat_with_ollama(message, history, image, system_prompt = None):
     messages = []
@@ -72,7 +105,6 @@ def chat_with_ollama(message, history, image, system_prompt = None):
     # Add current user message
     user_message_dict = {"role": "user", "content": message}
     if image:
-          from io import BytesIO
           buffered = BytesIO()
           image.save(buffered, format="PNG") # Assuming PNG format is suitable for base64 encoding
           img_b64 = base64.b64encode(buffered.getvalue()).decode()
@@ -114,6 +146,36 @@ with gr.Blocks() as demo:
       ollama_model_btn.click(
         fn=reload_ollama_model,
         inputs = [], outputs = model_logs)
+  
+  with gr.Tab("Chat with MedGemma JSON"):
+    with gr.Row():
+      with gr.Column():
+        input_img = gr.Image(type="pil", label="Upload Image",height="20vh")
+        img_b64_txt = gr.Textbox(label="Image base64")
+        input_img.upload(
+          fn = get_b64,
+          inputs = [input_img],
+          outputs = [img_b64_txt]
+        )
+      with gr.Column():
+        system_prompt_txt = gr.Textbox(label="System Prompt")
+        user_prompt_txt = gr.Textbox(label="User Prompt")
+    with gr.Row():
+      assemble_prompt_btn = gr.Button("Assemble JSON")
+      prompt_JSON_txt = gr.TextArea(label="JSON Prompt")
+      assemble_prompt_btn.click(
+        fn = assemble_json_prompt,
+        inputs = (system_prompt_txt, user_prompt_txt, img_b64_txt),
+        outputs = [prompt_JSON_txt]
+      )
+    with gr.Row():
+      prompt_ollama_btn = gr.Button("send prompt to ollama")
+      ollama_output_txt = gr.Markdown()
+      prompt_ollama_btn.click(
+        fn = chat_with_ollama_JSON,
+        inputs = [prompt_JSON_txt],
+        outputs = [ollama_output_txt]
+      )
 
   with gr.Tab("Chat with MedGemma"):
     gr.ChatInterface(
