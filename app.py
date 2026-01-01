@@ -7,6 +7,8 @@ from PIL import Image
 import base64
 import json
 from io import BytesIO
+import tempfile
+import mimetypes
 
 import torch
 from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline
@@ -19,7 +21,7 @@ class AudioToText:
       model_id = "openai/whisper-tiny"
 
       model = AutoModelForSpeechSeq2Seq.from_pretrained(
-          model_id, torch_dtype=torch_dtype, low_cpu_mem_usage=True, use_safetensors=True
+          model_id, dtype=torch_dtype, low_cpu_mem_usage=True, use_safetensors=True
       )
       model.to(device)
 
@@ -30,7 +32,7 @@ class AudioToText:
           model=model,
           tokenizer=processor.tokenizer,
           feature_extractor=processor.feature_extractor,
-          torch_dtype=torch_dtype,
+          dtype=torch_dtype,
           device=device,
       )
     def transcribe(self, filename):
@@ -57,12 +59,67 @@ def get_audio_summary(audio_file = None, system_prompt = None):
       result += chunk['message']['content']
       yield result
 
+def get_b64_string_from_url(url):
+  header, b64_data = url.split(",", 1)
+  return b64_data
+
+def data_uri_to_file(data_uri):
+    header, b64_data = data_uri.split(",", 1)
+
+    # Example header: data:audio/mpeg;base64
+    assert ";base64" in header, "Only base64 data URIs are supported"
+
+    mime_type = header.split(":")[1].split(";")[0]
+    extension = mimetypes.guess_extension(mime_type) or ""
+
+    data_bytes = base64.b64decode(b64_data)
+
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=extension)
+    tmp.write(data_bytes)
+    tmp.flush()
+    tmp.close()
+
+    return tmp.name, mime_type
+
 def chat_with_ollama_JSON(messages):
     messages = json.loads(messages)
+    system_message_audio_transcript = None
+    for mdx, message in enumerate(messages):
+      text_content,images = None,[]
+      for content_item in message["content"]:
+        if content_item["type"] == "text":
+          text_content = content_item["text"]
+        if content_item["type"] == "image_url":
+          image_b64 = get_b64_string_from_url(
+            content_item["image_url"]['url']
+            )
+          images.append(image_b64)
+        if content_item['type'] == "audio_url":
+          audio_temp_filepath, _ = data_uri_to_file(content_item["audio_url"]['url'])
+          audio_transcription = audio_pipe.transcribe(audio_temp_filepath)
+          system_message_audio_transcript = {
+            "role": "system", 
+            "content": f"The user has attached an audio with this transcription:\n {audio_transcription}"
+          }
+      removed_content_key = messages[mdx].pop('content', 'Content Key Not Found')
+      if not(text_content is None):
+        messages[mdx]["content"] = text_content
+      if not(len(images)==0):
+        messages[mdx]["images"] = images
+    
+    if not(system_message_audio_transcript is None):
+      messages.append(system_message_audio_transcript)
+
     result = ""
     for chunk in chat(model='amsaravi/medgemma-4b-it:q8', messages=messages, stream = True):
       result += chunk['message']['content']
       yield result
+
+def mp3_to_b64(mp3_path):
+    with open(mp3_path, "rb") as f:
+        mp3_bytes = f.read()
+    mp3_b64 = base64.b64encode(mp3_bytes).decode("utf-8")
+    return mp3_b64
 
 def get_b64(image):
   buffered = BytesIO()
@@ -71,19 +128,48 @@ def get_b64(image):
   return img_b64
 
 def assemble_json_prompt(system_prompt_txt, 
-      user_prompt_txt, img_b64_txt):
+      user_prompt_txt, img_b64_txt, audio_b64_txt):
   messages = []
   if (system_prompt_txt is not None) and (len(str(system_prompt_txt).strip())!=0):
     system_message_dict = {
             "role": "system", 
-            "content": system_prompt_txt}
+            "content": [
+              {
+                "type":"text",
+                "text":system_prompt_txt
+              }
+            ]
+            }
     messages.append(system_message_dict)
   if (user_prompt_txt is not None) and (len(str(user_prompt_txt).strip())!=0):
     user_message_dict = {
             "role": "user", 
-            "content": user_prompt_txt}
+            "content": [
+              {
+                "type":"text",
+                "text":user_prompt_txt
+              }
+            ]
+            }
     if (img_b64_txt is not None) and (len(str(img_b64_txt).strip())!=0):
-      user_message_dict["images"] = [img_b64_txt]
+      user_message_dict["content"].append(
+        {
+          "type":"image_url",
+          "image_url":{
+            'url': f"data:image/png;base64,{img_b64_txt}"
+          }
+        }
+      )
+      # user_message_dict["images"] = [img_b64_txt]
+    if (audio_b64_txt is not None) and (len(str(audio_b64_txt).strip())!=0):
+      user_message_dict["content"].append(
+        {
+          "type":"audio_url",
+          "audio_url":{
+            'url': f"data:audio/mpeg;base64,{audio_b64_txt}"
+          }
+        }
+      )
     messages.append(user_message_dict)
   return json.dumps(messages, sort_keys=True, indent=4)
 
@@ -151,13 +237,30 @@ with gr.Blocks() as demo:
     with gr.Row():
       with gr.Column():
         input_img = gr.Image(type="pil", label="Upload Image",height="20vh")
+        examples_img = gr.Examples(
+          examples=["./chest_xray.png"],
+          inputs=[input_img],
+        )
         img_b64_txt = gr.Textbox(label="Image base64")
-        input_img.upload(
+        input_img.change(
           fn = get_b64,
           inputs = [input_img],
           outputs = [img_b64_txt]
         )
       with gr.Column():
+        input_audio = gr.Audio(sources=['upload', 'microphone'],
+                      type="filepath", label="Upload Audio")
+        examples_audio = gr.Examples(
+          examples=["./hello_there.mp3"],
+          inputs=[input_audio],
+        )
+        audio_b64_txt = gr.Textbox(label="Audio base64")
+        input_audio.change(
+          fn = mp3_to_b64,
+          inputs = [input_audio],
+          outputs = [audio_b64_txt]
+        )
+    with gr.Row():
         system_prompt_txt = gr.Textbox(label="System Prompt")
         user_prompt_txt = gr.Textbox(label="User Prompt")
     with gr.Row():
@@ -165,7 +268,7 @@ with gr.Blocks() as demo:
       prompt_JSON_txt = gr.TextArea(label="JSON Prompt")
       assemble_prompt_btn.click(
         fn = assemble_json_prompt,
-        inputs = (system_prompt_txt, user_prompt_txt, img_b64_txt),
+        inputs = (system_prompt_txt, user_prompt_txt, img_b64_txt, audio_b64_txt),
         outputs = [prompt_JSON_txt]
       )
     with gr.Row():
