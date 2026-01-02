@@ -110,10 +110,14 @@ def chat_with_ollama_JSON(messages):
     if not(system_message_audio_transcript is None):
       messages.append(system_message_audio_transcript)
 
-    result = ""
+    # result = ""
+    result = []
     for chunk in chat(model='amsaravi/medgemma-4b-it:q8', messages=messages, stream = True):
-      result += chunk['message']['content']
-      yield result
+      # result += chunk['message']['content']
+      chunk_dict = dict(chunk)
+      chunk_dict["message"] = dict(chunk["message"])
+      result.append(chunk_dict)
+      yield json.dumps(result, sort_keys=False, indent=4)
 
 def mp3_to_b64(mp3_path):
     with open(mp3_path, "rb") as f:
@@ -171,7 +175,7 @@ def assemble_json_prompt(system_prompt_txt,
         }
       )
     messages.append(user_message_dict)
-  return json.dumps(messages, sort_keys=True, indent=4)
+  return json.dumps(messages, sort_keys=False, indent=4)
 
   
 
