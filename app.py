@@ -320,35 +320,59 @@ with gr.Blocks() as demo:
         **Vision prompting example:**
           ### Remarks: 
           - Make sure to replace the URL with your Gradio app URL.
-          - You can pass the imageBlob for visual analysis.
-          - The system prompt is optional.
           - The response is streamed.
 
           ```javascript
-          import { Client } from "@gradio/client";
-          import fs from "fs/promises";
-          const buffer = await fs.readFile("../chest_xray.png");
-          const URL = "https://22c15a1574ad57ad36.gradio.live/"; // Replace with your Gradio app URL
-          const imageBlob = new Blob([buffer], { type: "image/png" });
-          const client = await Client.connect(URL);
-          const result = client.submit("/chat", {
-              message: "Who are you?",
-                  image: null, // You can pass the imageBlob for visual analysis.
-              system_prompt: "You are a clinical analysis system",
-          });
-          let previous_message = ""
-          let current_message = ""
-          for await (const message of result) {
-            previous_message = current_message
-            console.clear();
-            current_message = message["data"][0]
-            console.log(current_message);
-            if(previous_message.length == current_message.length){
-              result.cancel();
-              break;
+import { Client } from "@gradio/client";
+import fs from "fs/promises";
+
+const URL = "http://127.0.0.1:7860"; // Replace with your Gradio app URL
+const client = await Client.connect(URL);
+
+const buffer = await fs.readFile("../chest_xray.png");
+const result = client.submit("/chat_with_ollama_JSON", { 		
+			messages: JSON.stringify([
+    {
+        "role": "system",
+        "content": [
+            {
+                "type": "text",
+                "text": "you are a medical assistant."
             }
-          }
-          console.log("DONE!")
+        ]
+    },
+    {
+        "role": "user",
+        "content": [
+            {
+                "type": "text",
+                "text": "what's in the picture?"
+            },
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": `data:image/png;base64,${buffer.toString("base64")}`
+                }
+            }
+        ]
+    }
+]), 
+	});
+
+let cummulative_message = ""
+let json_data = ""
+for await (const response of result) {
+  console.clear();
+  json_data = response["data"][0]
+  json_data = JSON.parse(json_data)
+  cummulative_message += json_data.at(-1)["message"]["content"]
+  console.log(cummulative_message);
+  if(json_data.at(-1)["done_reason"]=="stop"){
+    result.cancel();
+    break;
+  }
+}
+console.log("DONE!")
           ```
         """
 
@@ -358,34 +382,57 @@ with gr.Blocks() as demo:
         **Audio prompting example:**
         ### Remarks:
         - Make sure to replace the URL with your Gradio app URL.
-        - You have to pass the audioBlob for transcription.
-        - Without the system prompt, the model will just transcribe the audio.
-        - With the system prompt, the model will provide a summary or analysis based on the transcription.
 
         ```javascript
-        import { Client } from "@gradio/client";
-        import fs from "fs/promises";
-        const URL = "https://0f07c8280493e7c621.gradio.live/"; // Replace with your Gradio app URL
-        const buffer = await fs.readFile("../hello_there.mp3");
-        const audioBlob = new Blob([buffer], { type: "audio/mp3" });
-        const client = await Client.connect(URL);
-        const result = client.submit("/predict", {
-                audio_file: audioBlob,
-            system_prompt: "This is an audio transcription. what do you think it's all about?",
-        });
-        let previous_message = ""
-        let current_message = ""
-        for await (const message of result) {
-          previous_message = current_message
-          console.clear();
-          current_message = message["data"][0]
-          console.log(current_message);
-          if(previous_message.length == current_message.length){
-            result.cancel();
-            break;
-          }
-        }
-        console.log("DONE!")
+import { Client } from "@gradio/client";
+import fs from "fs/promises";
+const URL = "http://127.0.0.1:7860/"; // Replace with your Gradio app URL
+const client = await Client.connect(URL);
+
+const buffer = await fs.readFile("../hello_there.mp3");
+
+const result = client.submit("/chat_with_ollama_JSON", {
+        messages: JSON.stringify([
+    {
+        "role": "system",
+        "content": [
+            {
+                "type": "text",
+                "text": "you are an assistant."
+            }
+        ]
+    },
+    {
+        "role": "user",
+        "content": [
+            {
+                "type": "text",
+                "text": "what's in the audio?"
+            },
+            {
+                "type": "audio_url",
+                "audio_url": {
+                    "url": `data:audio/mpeg;base64,${buffer.toString("base64")}`
+                  }
+            }
+        ]
+    }
+]),
+});
+let cummulative_message = ""
+let json_data = ""
+for await (const response of result) {
+  console.clear();
+  json_data = response["data"][0]
+  json_data = JSON.parse(json_data)
+  cummulative_message += json_data.at(-1)["message"]["content"]
+  console.log(cummulative_message);
+  if(json_data.at(-1)["done_reason"]=="stop"){
+    result.cancel();
+    break;
+  }
+}
+console.log("DONE!")
 
         ```
         """
