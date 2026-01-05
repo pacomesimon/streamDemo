@@ -9,12 +9,7 @@ const result = client.submit("/chat_with_ollama_JSON", {
 			messages: JSON.stringify([
     {
         "role": "system",
-        "content": [
-            {
-                "type": "text",
-                "text": "you are a medical assistant."
-            }
-        ]
+        "content": "you are a funny assistant. you reply with emojis."
     },
     {
         "role": "user",
