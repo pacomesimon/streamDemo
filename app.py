@@ -86,27 +86,30 @@ def chat_with_ollama_JSON(messages):
     system_message_audio_transcript = None
     for mdx, message in enumerate(messages):
       text_content,images = None,[]
-      for content_item in message["content"]:
-        if content_item["type"] == "text":
-          text_content = content_item["text"]
-        if content_item["type"] == "image_url":
-          image_b64 = get_b64_string_from_url(
-            content_item["image_url"]['url']
-            )
-          images.append(image_b64)
-        if content_item['type'] == "audio_url":
-          audio_temp_filepath, _ = data_uri_to_file(content_item["audio_url"]['url'])
-          audio_transcription = audio_pipe.transcribe(audio_temp_filepath)
-          system_message_audio_transcript = {
-            "role": "system", 
-            "content": f"The user has attached an audio with this transcription:\n {audio_transcription}"
-          }
-      removed_content_key = messages[mdx].pop('content', 'Content Key Not Found')
-      if not(text_content is None):
-        messages[mdx]["content"] = text_content
-      if not(len(images)==0):
-        messages[mdx]["images"] = images
-    
+      if type(message["content"]) is str:
+        continue
+      if type(message["content"]) is list:
+        for content_item in message["content"]:
+          if content_item["type"] == "text":
+            text_content = content_item["text"]
+          if content_item["type"] == "image_url":
+            image_b64 = get_b64_string_from_url(
+              content_item["image_url"]['url']
+              )
+            images.append(image_b64)
+          if content_item['type'] == "audio_url":
+            audio_temp_filepath, _ = data_uri_to_file(content_item["audio_url"]['url'])
+            audio_transcription = audio_pipe.transcribe(audio_temp_filepath)
+            system_message_audio_transcript = {
+              "role": "system", 
+              "content": f"The user has attached an audio with this transcription:\n {audio_transcription}"
+            }
+        removed_content_key = messages[mdx].pop('content', 'Content Key Not Found')
+        if not(text_content is None):
+          messages[mdx]["content"] = text_content
+        if not(len(images)==0):
+          messages[mdx]["images"] = images
+      
     if not(system_message_audio_transcript is None):
       messages.append(system_message_audio_transcript)
 
@@ -137,12 +140,7 @@ def assemble_json_prompt(system_prompt_txt,
   if (system_prompt_txt is not None) and (len(str(system_prompt_txt).strip())!=0):
     system_message_dict = {
             "role": "system", 
-            "content": [
-              {
-                "type":"text",
-                "text":system_prompt_txt
-              }
-            ]
+            "content": system_prompt_txt,
             }
     messages.append(system_message_dict)
   if (user_prompt_txt is not None) and (len(str(user_prompt_txt).strip())!=0):
@@ -316,13 +314,13 @@ with gr.Blocks() as demo:
       """
     )
     gr.Markdown(
-        """
-        **Vision prompting example:**
-          ### Remarks: 
-          - Make sure to replace the URL with your Gradio app URL.
-          - The response is streamed.
+"""
+**Vision prompting example:**
+### Remarks: 
+- Make sure to replace the URL with your Gradio app URL.
+- The response is streamed.
 
-          ```javascript
+```javascript
 import { Client } from "@gradio/client";
 import fs from "fs/promises";
 
@@ -334,12 +332,7 @@ const result = client.submit("/chat_with_ollama_JSON", {
 			messages: JSON.stringify([
     {
         "role": "system",
-        "content": [
-            {
-                "type": "text",
-                "text": "you are a medical assistant."
-            }
-        ]
+        "content": "you are a funny assistant. you reply with emojis."
     },
     {
         "role": "user",
@@ -373,17 +366,17 @@ for await (const response of result) {
   }
 }
 console.log("DONE!")
-          ```
-        """
+```
+"""
 
     )
     gr.Markdown(
-        """
-        **Audio prompting example:**
-        ### Remarks:
-        - Make sure to replace the URL with your Gradio app URL.
+"""
+**Audio prompting example:**
+### Remarks:
+- Make sure to replace the URL with your Gradio app URL.
 
-        ```javascript
+```javascript
 import { Client } from "@gradio/client";
 import fs from "fs/promises";
 const URL = "http://127.0.0.1:7860/"; // Replace with your Gradio app URL
@@ -395,19 +388,14 @@ const result = client.submit("/chat_with_ollama_JSON", {
         messages: JSON.stringify([
     {
         "role": "system",
-        "content": [
-            {
-                "type": "text",
-                "text": "you are an assistant."
-            }
-        ]
+        "content": "you are a funny assistant. you reply with emojis."
     },
     {
         "role": "user",
         "content": [
             {
                 "type": "text",
-                "text": "what's in the audio?"
+                "text": "tell me in summary what the audio is all about."
             },
             {
                 "type": "audio_url",
@@ -433,9 +421,8 @@ for await (const response of result) {
   }
 }
 console.log("DONE!")
-
-        ```
-        """
+```
+"""
     )
 demo.launch(
     share=True,
